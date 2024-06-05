@@ -1,3 +1,30 @@
+# nng for Windows XP
+
+⚠️ **WARNING** ⚠️
+
+This is a terribly hacked together version of nng that will run on Windows XP in very specific situations. Namely, the http server functionality seems functional. Unless, of course, you need your server to close before your program does. 'Cause then it's gonna crash. I mean, it's gonna crash even if you only terminate the server at exit - but that's still an exit. OK in my book!
+
+If you try anything other than the HTTP server - you are on your own. IPC is completely borked so I hope you're OK with TCP. Honestly, no matter what, you're probably on your own anyway - other than what you find herein. Windows XP is a very, very old operating system. Let it rest. But, this repo is for those of you, like me, that cannot let it rest and like to breathe new life into old things. That's OK too, but you are warned: here be dragons. There is no support. No community. No issues will be accepted, and no pull reqests merged (unless they are really good I guess). And this will certianly, 100%, absolutely never be merged back into the main nng project.
+
+But maybe, just maybe, you will be able to use this to backport new software to old systems, like I did.
+
+### Differences from nng & build instructions
+
+This version of nng uses pthreads-win32 for threading instead of native Windows Vista+ threads, so pthreadVC2 is required to build it. Update the CMakeLists.txt file to have the correct path for your pthreadVC2.lib file. Additionally, various other functions have been replaced/re-written (rarely well, usually poorly) to not use Vista+ APIs.
+
+The largest remaining problem is that Windows XP does not have `CancelIoEx()`, which nng uses heavily. As a quick fix to get it to build I switched them to `CancelIo()`, which does not work. But - as I said above - this isn't a problem if you don't terminate connections before the program closes. It's pretty terrible, but it's good enough for my use case. Feel free to fix this if you want. Other functionality is probably not too far off from being functional either - if you care to fix it. I sure don't.
+
+I have only tested building this code with Visual Studio 2022, with the v141_xp Windows XP Platform Toolset using cmake, as follows:
+
+```
+mkdir build
+cd build
+cmake .. -G "Visual Studio 17 2022" -A Win32 -T v141_xp -DBUILD_SHARED_LIBS=ON -DCMAKE_FIND_ROOT_PATH="C:/path/to/build/dir/with/pthreads/mbedtls/etc" -DNNG_ENABLE_TLS=ON -DNNG_TOOLS=OFF -DNNG_TESTS=OFF -DNNG_ENABLE_NNGCAT=OFF -DNNG_ENABLE_COMPAT=OFF
+cmake --build . --config Release
+```
+
+May God have mercy on your soul. Original README follows.
+
 ifdef::env-github[]
 :note-caption: :information_source:
 :important-caption: :heavy_exclamation_mark:
