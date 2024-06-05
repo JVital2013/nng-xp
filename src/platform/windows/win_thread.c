@@ -14,25 +14,14 @@
 
 #ifdef NNG_PLATFORM_WINDOWS
 
-typedef HRESULT(WINAPI *pfnSetThreadDescription)(HANDLE, PCWSTR);
-static HMODULE hKernel32;
-
-static pfnSetThreadDescription set_thread_desc;
-
-// mingw does not define InterlockedAddNoFence64, use the mingw equivalent
-#if defined(__MINGW32__) || defined(__MINGW64__)
-#define InterlockedAddNoFence(a, b) __atomic_add_fetch(a, b, __ATOMIC_RELAXED)
-#define InterlockedAddNoFence64(a, b) \
-	__atomic_add_fetch(a, b, __ATOMIC_RELAXED)
-#define InterlockedIncrementAcquire64(a) \
-	__atomic_add_fetch(a, 1, __ATOMIC_ACQUIRE)
-#define InterlockedDecrementAcquire64(a) \
-	__atomic_sub_fetch(a, 1, __ATOMIC_ACQUIRE)
-#define InterlockedDecrementRelease64(a) \
-	__atomic_sub_fetch(a, 1, __ATOMIC_RELEASE)
-#endif
-
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
 
 void *
 nni_alloc(size_t sz)
@@ -51,114 +40,6 @@ nni_free(void *b, size_t z)
 {
 	NNI_ARG_UNUSED(z);
 	free(b);
-}
-
-void
-nni_plat_mtx_init(nni_plat_mtx *mtx)
-{
-	InitializeSRWLock(&mtx->srl);
-}
-
-void
-nni_plat_mtx_fini(nni_plat_mtx *mtx)
-{
-}
-
-void
-nni_plat_mtx_lock(nni_plat_mtx *mtx)
-{
-	AcquireSRWLockExclusive(&mtx->srl);
-}
-
-void
-nni_plat_mtx_unlock(nni_plat_mtx *mtx)
-{
-	ReleaseSRWLockExclusive(&mtx->srl);
-}
-
-void
-nni_rwlock_init(nni_rwlock *rwl)
-{
-	InitializeSRWLock(&rwl->rwl);
-}
-
-void
-nni_rwlock_fini(nni_rwlock *rwl)
-{
-	rwl->exclusive = FALSE;
-}
-
-void
-nni_rwlock_rdlock(nni_rwlock *rwl)
-{
-	AcquireSRWLockShared(&rwl->rwl);
-}
-
-void
-nni_rwlock_wrlock(nni_rwlock *rwl)
-{
-	AcquireSRWLockExclusive(&rwl->rwl);
-	rwl->exclusive = TRUE;
-}
-
-void
-nni_rwlock_unlock(nni_rwlock *rwl)
-{
-	if (rwl->exclusive) {
-		rwl->exclusive = FALSE;
-		ReleaseSRWLockExclusive(&rwl->rwl);
-	} else {
-		ReleaseSRWLockShared(&rwl->rwl);
-	}
-}
-
-void
-nni_plat_cv_init(nni_plat_cv *cv, nni_plat_mtx *mtx)
-{
-	InitializeConditionVariable(&cv->cv);
-	cv->srl = &mtx->srl;
-}
-
-void
-nni_plat_cv_wake(nni_plat_cv *cv)
-{
-	WakeAllConditionVariable(&cv->cv);
-}
-
-void
-nni_plat_cv_wake1(nni_plat_cv *cv)
-{
-	WakeConditionVariable(&cv->cv);
-}
-
-void
-nni_plat_cv_wait(nni_plat_cv *cv)
-{
-	(void) SleepConditionVariableSRW(&cv->cv, cv->srl, INFINITE, 0);
-}
-
-int
-nni_plat_cv_until(nni_plat_cv *cv, nni_time until)
-{
-	nni_time now;
-	DWORD    msec;
-	BOOL     ok;
-
-	now = nni_clock();
-	if (now > until) {
-		msec = 0;
-	} else {
-		msec = (DWORD) (until - now);
-	}
-
-	ok = SleepConditionVariableSRW(&cv->cv, cv->srl, msec, 0);
-	return (ok ? 0 : NNG_ETIMEDOUT);
-}
-
-void
-nni_plat_cv_fini(nni_plat_cv *cv)
-{
-	NNI_ARG_UNUSED(cv);
 }
 
 bool
@@ -200,102 +81,92 @@ nni_atomic_init_bool(nni_atomic_bool *v)
 void
 nni_atomic_add64(nni_atomic_u64 *v, uint64_t bump)
 {
-	InterlockedAddNoFence64(&v->v, (LONGLONG) bump);
+	v->v += bump;
 }
 
 void
 nni_atomic_sub64(nni_atomic_u64 *v, uint64_t bump)
 {
-	// Windows lacks a sub, so we add the negative.
-	InterlockedAddNoFence64(&v->v, (0ll - (LONGLONG) bump));
+	v->v -= bump;
 }
 
 uint64_t
 nni_atomic_get64(nni_atomic_u64 *v)
 {
 
-	return ((uint64_t) (InterlockedExchangeAdd64(&v->v, 0)));
+	return (uint64_t)v->v;
 }
 
 void
 nni_atomic_set64(nni_atomic_u64 *v, uint64_t u)
 {
-	(void) InterlockedExchange64(&v->v, (LONGLONG) u);
+    v->v = (LONGLONG) u;
 }
 
 void *
 nni_atomic_get_ptr(nni_atomic_ptr *v)
 {
-	return ((void *) (InterlockedExchangeAdd64(&v->v, 0)));
+	return (void *)&v->v;
 }
 
 void
 nni_atomic_set_ptr(nni_atomic_ptr *v, void *p)
 {
-	(void) InterlockedExchange64(&v->v, (LONGLONG) (uintptr_t) p);
+	v->v = (uintptr_t) p;
 }
 
 uint64_t
 nni_atomic_swap64(nni_atomic_u64 *v, uint64_t u)
 {
-	return ((uint64_t) (InterlockedExchange64(&v->v, (LONGLONG) u)));
+    uint64_t orig = v->v;
+    v->v = u;
+    return orig;
 }
 
 void
 nni_atomic_init64(nni_atomic_u64 *v)
 {
-	InterlockedExchange64(&v->v, 0);
+    v->v = 0;
 }
 
 void
 nni_atomic_inc64(nni_atomic_u64 *v)
 {
-#ifdef _WIN64
-	(void) InterlockedIncrementAcquire64(&v->v);
-#else
-	(void) InterlockedIncrement64(&v->v);
-#endif
+    v->v++;
 }
 
 uint64_t
 nni_atomic_dec64_nv(nni_atomic_u64 *v)
 {
-#ifdef _WIN64
-	return ((uint64_t) (InterlockedDecrementRelease64(&v->v)));
-#else
-	return ((uint64_t) (InterlockedDecrement64(&v->v)));
-#endif
+    v->v--;
+    return v->v;
 }
 
 void
 nni_atomic_dec64(nni_atomic_u64 *v)
 {
-#ifdef _WIN64
-	InterlockedDecrementAcquire64(&v->v);
-#else
-	InterlockedDecrement64(&v->v);
-#endif
+	v->v--;
 }
 
 bool
 nni_atomic_cas64(nni_atomic_u64 *v, uint64_t comp, uint64_t new)
 {
-	uint64_t old;
-	old = InterlockedCompareExchange64(&v->v, (LONG64) new, (LONG64) comp);
-	return (old == comp);
+    bool retval = v->v == comp;
+	if(retval) v->v = new;
+	return retval;
 }
 
 void
 nni_atomic_add(nni_atomic_int *v, int bump)
 {
-	InterlockedAddNoFence(&v->v, (LONG) bump);
+    v->v += bump;
 }
 
 void
 nni_atomic_sub(nni_atomic_int *v, int bump)
 {
 	// Windows lacks a sub, so we add the negative.
-	InterlockedAddNoFence(&v->v, (LONG) -bump);
+	v->v -= bump;
 }
 
 int
@@ -349,27 +220,247 @@ nni_atomic_cas(nni_atomic_int *v, int comp, int new)
 	return (old == comp);
 }
 
-static unsigned int __stdcall nni_plat_thr_main(void *arg)
+
+static pthread_mutex_t nni_plat_init_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile int    nni_plat_inited    = 0;
+static int             nni_plat_forked    = 0;
+
+pthread_condattr_t  nni_cvattr;
+pthread_mutexattr_t nni_mxattr;
+pthread_attr_t      nni_thrattr;
+
+void
+nni_plat_mtx_init(nni_plat_mtx *mtx)
+{
+	// On most platforms, pthread_mutex_init cannot ever fail, when
+	// given NULL attributes.  Linux and Solaris fall into this category.
+	// BSD platforms (including OpenBSD, FreeBSD, and macOS) seem to
+	// attempt to allocate memory during mutex initialization.
+
+	// An earlier design worked around failures here by using a global
+	// fallback lock, but this was potentially racy, complex, and led
+	// to some circumstances where we were simply unable to provide
+	// adequate debug.
+
+	// If you find you're spending time in this function, consider
+	// adding more memory, reducing consumption, or moving to an
+	// operating system that doesn't need to do heap allocations
+	// to create mutexes.
+
+	// The symptom will be an apparently stuck application spinning
+	// every 10 ms trying to allocate this lock.
+
+	while ((pthread_mutex_init(&mtx->mtx, &nni_mxattr) != 0) &&
+	    (pthread_mutex_init(&mtx->mtx, NULL) != 0)) {
+		// We must have memory exhaustion -- ENOMEM, or
+		// in some cases EAGAIN.  Wait a bit before we try to
+		// give things a chance to settle down.
+		nni_msleep(10);
+	}
+}
+
+void
+nni_plat_mtx_fini(nni_plat_mtx *mtx)
+{
+	(void) pthread_mutex_destroy(&mtx->mtx);
+}
+
+static void
+nni_pthread_mutex_lock(pthread_mutex_t *m)
+{
+	int rv;
+	if ((rv = pthread_mutex_lock(m)) != 0) {
+		nni_panic("pthread_mutex_lock: %s", strerror(rv));
+	}
+}
+
+static void
+nni_pthread_mutex_unlock(pthread_mutex_t *m)
+{
+	int rv;
+	if ((rv = pthread_mutex_unlock(m)) != 0) {
+		nni_panic("pthread_mutex_unlock: %s", strerror(rv));
+	}
+}
+
+static void
+nni_pthread_cond_broadcast(pthread_cond_t *c)
+{
+	int rv;
+	if ((rv = pthread_cond_broadcast(c)) != 0) {
+		nni_panic("pthread_cond_broadcast: %s", strerror(rv));
+	}
+}
+
+static void
+nni_pthread_cond_signal(pthread_cond_t *c)
+{
+	int rv;
+	if ((rv = pthread_cond_signal(c)) != 0) {
+		nni_panic("pthread_cond_signal: %s", strerror(rv));
+	}
+}
+
+static void
+nni_pthread_cond_wait(pthread_cond_t *c, pthread_mutex_t *m)
+{
+	int rv;
+
+	if ((rv = pthread_cond_wait(c, m)) != 0) {
+		nni_panic("pthread_cond_wait: %s", strerror(rv));
+	}
+}
+
+static int
+nni_pthread_cond_timedwait(
+    pthread_cond_t *c, pthread_mutex_t *m, struct timespec *ts)
+{
+	int rv;
+
+	switch ((rv = pthread_cond_timedwait(c, m, ts))) {
+	case 0:
+		return (0);
+	case ETIMEDOUT:
+	case EAGAIN:
+		return (NNG_ETIMEDOUT);
+	}
+	nni_panic("pthread_cond_timedwait: %s", strerror(rv));
+	return (NNG_EINVAL);
+}
+
+void
+nni_plat_mtx_lock(nni_plat_mtx *mtx)
+{
+	nni_pthread_mutex_lock(&mtx->mtx);
+}
+
+void
+nni_plat_mtx_unlock(nni_plat_mtx *mtx)
+{
+	nni_pthread_mutex_unlock(&mtx->mtx);
+}
+
+void
+nni_rwlock_init(nni_rwlock *rwl)
+{
+	while (pthread_rwlock_init(&rwl->rwl, NULL) != 0) {
+		// We must have memory exhaustion -- ENOMEM, or
+		// in some cases EAGAIN.  Wait a bit before we try to
+		// give things a chance to settle down.
+		nni_msleep(10);
+	}
+}
+
+void
+nni_rwlock_fini(nni_rwlock *rwl)
+{
+	int rv;
+	if ((rv = pthread_rwlock_destroy(&rwl->rwl)) != 0) {
+		nni_panic("pthread_rwlock_destroy: %s", strerror(rv));
+	}
+}
+
+void
+nni_rwlock_rdlock(nni_rwlock *rwl)
+{
+	int rv;
+	if ((rv = pthread_rwlock_rdlock(&rwl->rwl)) != 0) {
+		nni_panic("pthread_rwlock_rdlock: %s", strerror(rv));
+	}
+}
+
+void
+nni_rwlock_wrlock(nni_rwlock *rwl)
+{
+	int rv;
+	if ((rv = pthread_rwlock_wrlock(&rwl->rwl)) != 0) {
+		nni_panic("pthread_rwlock_wrlock: %s", strerror(rv));
+	}
+}
+
+void
+nni_rwlock_unlock(nni_rwlock *rwl)
+{
+	int rv;
+	if ((rv = pthread_rwlock_unlock(&rwl->rwl)) != 0) {
+		nni_panic("pthread_rwlock_unlock: %s", strerror(rv));
+	}
+}
+
+void
+nni_plat_cv_init(nni_plat_cv *cv, nni_plat_mtx *mtx)
+{
+	// See the comments in nni_plat_mtx_init.  Almost everywhere this
+	// simply does not/cannot fail.
+
+	while (pthread_cond_init(&cv->cv, &nni_cvattr) != 0) {
+		nni_msleep(10);
+	}
+	cv->mtx = mtx;
+}
+
+void
+nni_plat_cv_wake(nni_plat_cv *cv)
+{
+	nni_pthread_cond_broadcast(&cv->cv);
+}
+
+void
+nni_plat_cv_wake1(nni_plat_cv *cv)
+{
+	nni_pthread_cond_signal(&cv->cv);
+}
+
+void
+nni_plat_cv_wait(nni_plat_cv *cv)
+{
+	nni_pthread_cond_wait(&cv->cv, &cv->mtx->mtx);
+}
+
+int
+nni_plat_cv_until(nni_plat_cv *cv, nni_time until)
+{
+	struct timespec ts;
+
+	// Our caller has already guaranteed a sane value for until.
+	ts.tv_sec  = until / 1000;
+	ts.tv_nsec = (until % 1000) * 1000000;
+
+	return (nni_pthread_cond_timedwait(&cv->cv, &cv->mtx->mtx, &ts));
+}
+
+void
+nni_plat_cv_fini(nni_plat_cv *cv)
+{
+	int rv;
+
+	if ((rv = pthread_cond_destroy(&cv->cv)) != 0) {
+		nni_panic("pthread_cond_destroy: %s", strerror(rv));
+	}
+	cv->mtx = NULL;
+}
+
+static void *
+nni_plat_thr_main(void *arg)
 {
 	nni_plat_thr *thr = arg;
-
-	thr->id = GetCurrentThreadId();
 	thr->func(thr->arg);
-	return (0);
+	return (NULL);
 }
 
 int
 nni_plat_thr_init(nni_plat_thr *thr, void (*fn)(void *), void *arg)
 {
+	int rv;
 	thr->func = fn;
 	thr->arg  = arg;
 
-	// We could probably even go down to 8k... but crypto for some
-	// protocols might get bigger than this.  1MB is waaay too big.
-	thr->handle = (HANDLE) _beginthreadex(NULL, 16384, nni_plat_thr_main,
-	    thr, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
-	if (thr->handle == NULL) {
-		return (NNG_ENOMEM); // Best guess...
+	// POSIX wants functions to return a void *, but we don't care.
+	rv = pthread_create(&thr->tid, &nni_thrattr, nni_plat_thr_main, thr);
+	if (rv != 0) {
+		// nni_printf("pthread_create: %s",
+		// strerror(rv));
+		return (NNG_ENOMEM);
 	}
 	return (0);
 }
@@ -377,46 +468,145 @@ nni_plat_thr_init(nni_plat_thr *thr, void (*fn)(void *), void *arg)
 void
 nni_plat_thr_fini(nni_plat_thr *thr)
 {
-	if (WaitForSingleObject(thr->handle, INFINITE) == WAIT_FAILED) {
-		nni_panic("waiting for thread failed!");
-	}
-	if (CloseHandle(thr->handle) == 0) {
-		nni_panic("close handle for thread failed!");
+	int rv;
+	if ((rv = pthread_join(thr->tid, NULL))) {
+		nni_panic("pthread_join: %s", strerror(rv));
 	}
 }
 
 bool
 nni_plat_thr_is_self(nni_plat_thr *thr)
 {
-	return (GetCurrentThreadId() == thr->id);
+	return pthread_equal(pthread_self(), thr->tid);
 }
 
 void
 nni_plat_thr_set_name(nni_plat_thr *thr, const char *name)
 {
-	if (set_thread_desc != NULL) {
-		wchar_t *wcs;
-		size_t   len;
-		HANDLE   h;
-
-		if (thr == NULL) {
-			h = GetCurrentThread();
-		} else {
-			h = thr->handle;
-		}
-
-		len = strlen(name) + 1;
-		if ((wcs = nni_alloc(len * 2)) == NULL) {
-			return;
-		}
-		(void) MultiByteToWideChar(
-		    CP_UTF8, 0, name, (int) len, wcs, (int) len);
-		set_thread_desc(h, wcs);
-		nni_free(wcs, len * 2);
+#if defined(NNG_HAVE_PTHREAD_SETNAME_NP)
+#if defined(__APPLE__)
+	// Darwin is weird, it can only set the name of pthread_self.
+	if ((thr == NULL) || pthread_equal(pthread_self(), hr->tid)) {
+		pthread_setname_np(name);
 	}
+#elif defined(__NetBSD__)
+	if (thr == NULL) {
+		pthread_setname_np(pthread_self(), "%s", name);
+	} else {
+		pthread_setname_np(thr->tid, "%s", name);
+	}
+#else
+	if (thr == NULL) {
+		pthread_setname_np(pthread_self(), name);
+	} else {
+		pthread_setname_np(thr->tid, name);
+	}
+#endif
+#elif defined(NNG_HAVE_PTHREAD_SET_NAME_NP)
+	if (thr == NULL) {
+		pthread_set_name_np(pthread_self(), name);
+	} else {
+		pthread_set_name_np(thr->tid, name);
+	}
+#endif
 }
 
-static LONG plat_inited = 0;
+void
+nni_atfork_child(void)
+{
+	nni_plat_forked = 1;
+}
+
+int
+nni_plat_init(int (*helper)(void))
+{
+	int rv;
+	if (nni_plat_forked) {
+		nni_panic("nng is not fork-reentrant safe");
+	}
+	if (nni_plat_inited) {
+		return (0); // fast path
+	}
+
+	pthread_mutex_lock(&nni_plat_init_lock);
+	if (nni_plat_inited) { // check again under the lock to be sure
+		pthread_mutex_unlock(&nni_plat_init_lock);
+		return (0);
+	}
+
+	if ((pthread_mutexattr_init(&nni_mxattr) != 0) ||
+	    (pthread_condattr_init(&nni_cvattr) != 0) ||
+	    (pthread_attr_init(&nni_thrattr) != 0)) {
+		// Technically this is leaking, but it should never
+		// occur, so really not worried about it.
+		pthread_mutex_unlock(&nni_plat_init_lock);
+		return (NNG_ENOMEM);
+	}
+
+#if !defined(NNG_USE_GETTIMEOFDAY) && NNG_USE_CLOCKID != CLOCK_REALTIME
+	if (pthread_condattr_setclock(&nni_cvattr, NNG_USE_CLOCKID) != 0) {
+		pthread_mutex_unlock(&nni_plat_init_lock);
+		pthread_mutexattr_destroy(&nni_mxattr);
+		pthread_condattr_destroy(&nni_cvattr);
+		pthread_attr_destroy(&nni_thrattr);
+		return (NNG_ENOMEM);
+	}
+#endif
+
+#if defined(NNG_SETSTACKSIZE)
+	struct rlimit rl;
+	if ((getrlimit(RLIMIT_STACK, &rl) == 0) &&
+	    (rl.rlim_cur != RLIM_INFINITY) &&
+	    (rl.rlim_cur >= PTHREAD_STACK_MIN) &&
+	    (pthread_attr_setstacksize(&nni_thrattr, rl.rlim_cur) != 0)) {
+		pthread_mutex_unlock(&nni_plat_init_lock);
+		pthread_mutexattr_destroy(&nni_mxattr);
+		pthread_condattr_destroy(&nni_cvattr);
+		pthread_attr_destroy(&nni_thrattr);
+		return (NNG_ENOMEM);
+	}
+#endif
+
+	// if this one fails we don't care.
+	(void) pthread_mutexattr_settype(
+	    &nni_mxattr, PTHREAD_MUTEX_ERRORCHECK);
+
+	if (((rv = nni_win_io_sysinit()) != 0) ||
+        ((rv = nni_win_ipc_sysinit()) != 0) ||
+        ((rv = nni_win_tcp_sysinit()) != 0) ||
+        ((rv = nni_win_udp_sysinit()) != 0) ||
+        ((rv = nni_win_resolv_sysinit()) != 0)) {
+		pthread_mutex_unlock(&nni_plat_init_lock);
+		pthread_mutexattr_destroy(&nni_mxattr);
+		pthread_condattr_destroy(&nni_cvattr);
+		pthread_attr_destroy(&nni_thrattr);
+		return (rv);
+	}
+
+	if ((rv = helper()) == 0) {
+		nni_plat_inited = 1;
+	}
+	pthread_mutex_unlock(&nni_plat_init_lock);
+	return (rv);
+}
+
+void
+nni_plat_fini(void)
+{
+	pthread_mutex_lock(&nni_plat_init_lock);
+	if (nni_plat_inited) {
+		nni_win_resolv_sysfini();
+        nni_win_ipc_sysfini();
+        nni_win_udp_sysfini();
+        nni_win_tcp_sysfini();
+        nni_win_io_sysfini();
+        WSACleanup();
+		pthread_mutexattr_destroy(&nni_mxattr);
+		pthread_condattr_destroy(&nni_cvattr);
+		nni_plat_inited = 0;
+	}
+	pthread_mutex_unlock(&nni_plat_init_lock);
+}
 
 int
 nni_plat_ncpu(void)
@@ -425,60 +615,6 @@ nni_plat_ncpu(void)
 
 	GetSystemInfo(&info);
 	return ((int) (info.dwNumberOfProcessors));
-}
-
-int
-nni_plat_init(int (*helper)(void))
-{
-	int            rv   = 0;
-	static SRWLOCK lock = SRWLOCK_INIT;
-
-	if (plat_inited) {
-		return (0); // fast path
-	}
-
-	AcquireSRWLockExclusive(&lock);
-
-	if (!plat_inited) {
-		// Let's look up the function to set thread descriptions.
-		hKernel32 = LoadLibrary(TEXT("kernel32.dll"));
-		if (hKernel32 != NULL) {
-			set_thread_desc =
-			    (pfnSetThreadDescription) GetProcAddress(
-			        hKernel32, "SetThreadDescription");
-		}
-
-		if (((rv = nni_win_io_sysinit()) != 0) ||
-		    ((rv = nni_win_ipc_sysinit()) != 0) ||
-		    ((rv = nni_win_tcp_sysinit()) != 0) ||
-		    ((rv = nni_win_udp_sysinit()) != 0) ||
-		    ((rv = nni_win_resolv_sysinit()) != 0)) {
-			goto out;
-		}
-
-		helper();
-		plat_inited = 1;
-	}
-
-out:
-	ReleaseSRWLockExclusive(&lock);
-
-	return (rv);
-}
-
-void
-nni_plat_fini(void)
-{
-	nni_win_resolv_sysfini();
-	nni_win_ipc_sysfini();
-	nni_win_udp_sysfini();
-	nni_win_tcp_sysfini();
-	nni_win_io_sysfini();
-	WSACleanup();
-	if (hKernel32 != NULL) {
-		FreeLibrary(hKernel32);
-	}
-	plat_inited = 0;
 }
 
 #endif

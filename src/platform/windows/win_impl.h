@@ -25,44 +25,49 @@
 
 #include "core/list.h"
 
+#include <pthread.h>
 // These types are provided for here, to permit them to be directly inlined
 // elsewhere.
 
 struct nni_plat_thr {
+	pthread_t tid;
 	void (*func)(void *);
-	void  *arg;
-	HANDLE handle;
-	DWORD  id;
+	void *arg;
 };
 
 struct nni_plat_mtx {
-	SRWLOCK srl;
+	pthread_mutex_t mtx;
 };
 
-#define NNI_MTX_INITIALIZER  \
-	{                    \
-		SRWLOCK_INIT \
+#define NNI_MTX_INITIALIZER               \
+	{                                 \
+		PTHREAD_MUTEX_INITIALIZER \
 	}
 
 struct nni_rwlock {
-	SRWLOCK rwl;
-	BOOLEAN exclusive;
+	pthread_rwlock_t rwl;
 };
 
-#define NNI_RWLOCK_INITIALIZER \
-	{                      \
-		SRWLOCK_INIT   \
+#define NNI_RWLOCK_INITIALIZER             \
+	{                                  \
+		PTHREAD_RWLOCK_INITIALIZER \
 	}
 
+// No static form of CV initialization because of the need to use
+// attributes to set the clock type.
 struct nni_plat_cv {
-	CONDITION_VARIABLE cv;
-	PSRWLOCK           srl;
+	pthread_cond_t cv;
+	nni_plat_mtx  *mtx;
 };
 
-#define NNI_CV_INITIALIZER(mxp)                                    \
-	{                                                          \
-		.srl = (void *) mxp, .cv = CONDITION_VARIABLE_INIT \
+// NOTE: condition variables initialized with this should *NOT*
+// be used with nni_cv_until -- the clock attributes are not passed
+// and the wake-up times will not be correct.
+#define NNI_CV_INITIALIZER(mxp)                            \
+	{                                                  \
+		.mtx = mxp, .cv = PTHREAD_COND_INITIALIZER \
 	}
+
 
 struct nni_atomic_flag {
 	LONG f;

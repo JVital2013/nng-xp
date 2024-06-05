@@ -251,7 +251,8 @@ ipc_accept_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_unlock(&l->mtx);
 	if (aio == nni_list_first(&l->aios)) {
 		l->rv = rv;
-		CancelIoEx(l->f, &l->io.olpd);
+		//CancelIoEx(l->f, &l->io.olpd); //TODOXP
+		CancelIo(l->f, &l->io.olpd);
 	} else if (nni_aio_list_active(aio)) {
 		nni_list_remove(&l->aios, aio);
 		nni_cv_wake(&l->cv);
@@ -289,7 +290,8 @@ ipc_listener_close(void *arg)
 	if (!l->closed) {
 		l->closed = true;
 		if (!nni_list_empty(&l->aios)) {
-			CancelIoEx(l->f, &l->io.olpd);
+			//CancelIoEx(l->f, &l->io.olpd); //TODOXP
+			CancelIo(l->f, &l->io.olpd);
 		}
 		DisconnectNamedPipe(l->f);
 		CloseHandle(l->f);

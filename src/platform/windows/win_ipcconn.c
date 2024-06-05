@@ -118,7 +118,8 @@ ipc_recv_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_lock(&c->mtx);
 	if (aio == nni_list_first(&c->recv_aios)) {
 		c->recv_rv = rv;
-		CancelIoEx(c->f, &c->recv_io.olpd);
+		//CancelIoEx(c->f, &c->recv_io.olpd); //TODOXP
+        CancelIo(c->f, &c->recv_io.olpd);
 	} else {
 		nni_aio *srch;
 		NNI_LIST_FOREACH (&c->recv_aios, srch) {
@@ -234,7 +235,8 @@ ipc_send_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_lock(&c->mtx);
 	if (aio == nni_list_first(&c->send_aios)) {
 		c->send_rv = rv;
-		CancelIoEx(c->f, &c->send_io.olpd);
+		//CancelIoEx(c->f, &c->send_io.olpd); //TODOXP
+        CancelIo(c->f, &c->send_io.olpd);
 	} else {
 		nni_aio *srch;
 		NNI_LIST_FOREACH (&c->recv_aios, srch) {
@@ -333,7 +335,8 @@ static int
 ipc_conn_get_peer_pid(void *c, void *buf, size_t *szp, nni_opt_type t)
 {
 	ULONG id;
-
+    id = 0; //TODOXP
+    /*
 	if (CONN(c)->dialer) {
 		if (!GetNamedPipeServerProcessId(CONN(c)->f, &id)) {
 			return (nni_win_error(GetLastError()));
@@ -343,6 +346,7 @@ ipc_conn_get_peer_pid(void *c, void *buf, size_t *szp, nni_opt_type t)
 			return (nni_win_error(GetLastError()));
 		}
 	}
+    */
 	return (nni_copyout_u64(id, buf, szp, t));
 }
 

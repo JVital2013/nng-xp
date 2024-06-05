@@ -81,7 +81,8 @@ nni_tcp_dialer_close(nni_tcp_dialer *d)
 
 			if ((c = nni_aio_get_prov_data(aio)) != NULL) {
 				c->conn_rv = NNG_ECLOSED;
-				CancelIoEx((HANDLE) c->s, &c->conn_io.olpd);
+				//CancelIoEx((HANDLE) c->s, &c->conn_io.olpd); //TODOXP
+				CancelIo((HANDLE) c->s, &c->conn_io.olpd);
 			}
 		}
 	}
@@ -120,7 +121,8 @@ tcp_dial_cancel(nni_aio *aio, void *arg, int rv)
 		if (c->conn_rv == 0) {
 			c->conn_rv = rv;
 		}
-		CancelIoEx((HANDLE) c->s, &c->conn_io.olpd);
+		//CancelIoEx((HANDLE) c->s, &c->conn_io.olpd); //TODOXP
+		CancelIo((HANDLE) c->s, &c->conn_io.olpd);
 	}
 	nni_mtx_unlock(&d->mtx);
 }

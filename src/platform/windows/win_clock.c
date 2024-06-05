@@ -18,7 +18,7 @@ nni_time
 nni_clock(void)
 {
 	// We are limited by the system clock, but that is ok.
-	return (GetTickCount64());
+	return (GetTickCount());
 }
 
 int
@@ -38,7 +38,7 @@ nni_msleep(nni_duration dur)
 {
 	uint64_t exp;
 
-	exp = (uint64_t) GetTickCount64() + dur;
+	exp = (uint64_t) GetTickCount() + dur;
 
 	// Sleep() would be our preferred API, if it didn't have a nasty
 	// feature where it rounds *down*.  We always want to sleep *at
@@ -47,7 +47,7 @@ nni_msleep(nni_duration dur)
 	// of waiting until the next clock tick.
 
 	Sleep((DWORD) dur);
-	while ((uint64_t) GetTickCount64() < exp) {
+	while ((uint64_t) GetTickCount() < exp) {
 		Sleep(1);
 	}
 }

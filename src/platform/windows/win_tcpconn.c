@@ -99,7 +99,8 @@ tcp_recv_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_lock(&c->mtx);
 	if ((aio == nni_list_first(&c->recv_aios)) && (c->recv_rv == 0)) {
 		c->recv_rv = rv;
-		CancelIoEx((HANDLE) c->s, &c->recv_io.olpd);
+		// CancelIoEx((HANDLE) c->s, &c->recv_io.olpd); //TODOXP
+        CancelIo((HANDLE) c->s, &c->recv_io.olpd);
 	} else {
 		nni_aio *srch;
 		NNI_LIST_FOREACH (&c->recv_aios, srch) {
@@ -184,7 +185,8 @@ tcp_send_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_lock(&c->mtx);
 	if (aio == nni_list_first(&c->send_aios)) {
 		c->send_rv = rv;
-		CancelIoEx((HANDLE) c->s, &c->send_io.olpd);
+		//CancelIoEx((HANDLE) c->s, &c->send_io.olpd); //TODOXP
+		CancelIo((HANDLE) c->s, &c->send_io.olpd);
 	} else {
 		nni_aio *srch;
 		NNI_LIST_FOREACH (&c->send_aios, srch) {

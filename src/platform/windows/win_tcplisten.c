@@ -40,21 +40,21 @@ struct nni_tcp_listener {
 static int
 tcp_listener_funcs(nni_tcp_listener *l)
 {
-	static SRWLOCK                   lock = SRWLOCK_INIT;
+	static pthread_mutex_t           tcp_listener_func_lock = PTHREAD_MUTEX_INITIALIZER;
 	static LPFN_ACCEPTEX             acceptex;
 	static LPFN_GETACCEPTEXSOCKADDRS getacceptexsockaddrs;
-
-	AcquireSRWLockExclusive(&lock);
+    
+    pthread_mutex_lock(&tcp_listener_func_lock);
 	if (acceptex == NULL) {
 		int    rv;
 		DWORD  nbytes;
 		GUID   guid1 = WSAID_ACCEPTEX;
 		GUID   guid2 = WSAID_GETACCEPTEXSOCKADDRS;
-		SOCKET s     = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+		SOCKET s     = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 		if (s == INVALID_SOCKET) {
 			rv = nni_win_error(GetLastError());
-			ReleaseSRWLockExclusive(&lock);
+			pthread_mutex_unlock(&tcp_listener_func_lock);
 			return (rv);
 		}
 
@@ -69,13 +69,13 @@ tcp_listener_funcs(nni_tcp_listener *l)
 			rv                   = nni_win_error(GetLastError());
 			acceptex             = NULL;
 			getacceptexsockaddrs = NULL;
-			ReleaseSRWLockExclusive(&lock);
+			pthread_mutex_unlock(&tcp_listener_func_lock);
 			closesocket(s);
 			return (rv);
 		}
 		closesocket(s);
 	}
-	ReleaseSRWLockExclusive(&lock);
+	pthread_mutex_unlock(&tcp_listener_func_lock);
 
 	l->acceptex             = acceptex;
 	l->getacceptexsockaddrs = getacceptexsockaddrs;
@@ -134,6 +134,7 @@ nni_tcp_listener_init(nni_tcp_listener **lp)
 	nni_aio_list_init(&l->aios);
 	nni_win_io_init(&l->accept_io, tcp_accept_cb, l);
 	l->accept_rv = 0;
+
 	if ((rv = tcp_listener_funcs(l)) != 0) {
 		nni_tcp_listener_fini(l);
 		return (rv);
@@ -157,7 +158,8 @@ nni_tcp_listener_close(nni_tcp_listener *l)
 	if (!l->closed) {
 		l->closed = true;
 		if (!nni_list_empty(&l->aios)) {
-			CancelIoEx((HANDLE) l->s, &l->accept_io.olpd);
+			// CancelIoEx((HANDLE) l->s, &l->accept_io.olpd); //TODOXP
+			CancelIo((HANDLE) l->s, &l->accept_io.olpd);
 		}
 		closesocket(l->s);
 		if ((conn = l->pend_conn) != NULL) {
@@ -264,7 +266,8 @@ tcp_accept_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_lock(&l->mtx);
 	if (aio == nni_list_first(&l->aios)) {
 		l->accept_rv = rv;
-		CancelIoEx((HANDLE) l->s, &l->accept_io.olpd);
+		//CancelIoEx((HANDLE) l->s, &l->accept_io.olpd); //TODOXP
+		CancelIo((HANDLE) l->s, &l->accept_io.olpd);
 	} else {
 		nni_aio *srch;
 		NNI_LIST_FOREACH (&l->aios, srch) {

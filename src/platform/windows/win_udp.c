@@ -92,7 +92,8 @@ nni_plat_udp_close(nni_plat_udp *u)
 	nni_mtx_lock(&u->lk);
 	u->closed = true;
 	if (!nni_list_empty(&u->rxq)) {
-		CancelIoEx((HANDLE) u->s, &u->rxio.olpd);
+		//CancelIoEx((HANDLE) u->s, &u->rxio.olpd); //TODOXP
+		CancelIo((HANDLE) u->s, &u->rxio.olpd);
 	}
 	while (!nni_list_empty(&u->rxq)) {
 		nni_cv_wait(&u->cv);
@@ -177,7 +178,8 @@ udp_recv_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_lock(&u->lk);
 	if (aio == nni_list_first(&u->rxq)) {
 		u->cancel_rv = rv;
-		CancelIoEx((HANDLE) u->s, &u->rxio.olpd);
+		//CancelIoEx((HANDLE) u->s, &u->rxio.olpd); //TODOXP
+		CancelIo((HANDLE) u->s, &u->rxio.olpd);
 	} else if (nni_aio_list_active(aio)) {
 		nni_aio_list_remove(aio);
 		nni_aio_finish_error(aio, rv);

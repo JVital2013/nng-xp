@@ -257,9 +257,9 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
     add_definitions(-D_CRT_RAND_S)
     set(NNG_PLATFORM_WINDOWS ON)
 
-    # Target Windows Vista and later
-    add_definitions(-D_WIN32_WINNT=0x0600)
-    list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_WIN32_WINNT=0x0600)
+    # Target Windows XP and Later
+    add_definitions(-D_WIN32_WINNT=0x0501 -DWINVER=0x0501)
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_WIN32_WINNT=0x0501 -DWINVER=0x0501)
 
 elseif (CMAKE_SYSTEM_NAME MATCHES "QNX")
     add_definitions(-DNNG_PLATFORM_POSIX)

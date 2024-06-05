@@ -24,7 +24,7 @@ if (NNG_PLATFORM_WINDOWS)
                 "using either Visual Studio 2013 or compatible compiler, "
                 "and are also using the universal C runtime (UCRT).")
     endif ()
-    nng_link_libraries(ws2_32 mswsock advapi32)
+    nng_link_libraries(ws2_32 mswsock advapi32 C:/Users/Jamie/Documents/Programs/SatDump/vcpkg/installed/x64-windows/lib/pthreadVC2.lib)
 
     nng_sources(
             win_impl.h
