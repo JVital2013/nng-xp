@@ -159,7 +159,7 @@ nni_tcp_listener_close(nni_tcp_listener *l)
 		l->closed = true;
 		if (!nni_list_empty(&l->aios)) {
 			// CancelIoEx((HANDLE) l->s, &l->accept_io.olpd); //TODOXP
-			CancelIo((HANDLE) l->s, &l->accept_io.olpd);
+			CancelIo((HANDLE) l->s);
 		}
 		closesocket(l->s);
 		if ((conn = l->pend_conn) != NULL) {
@@ -267,7 +267,7 @@ tcp_accept_cancel(nni_aio *aio, void *arg, int rv)
 	if (aio == nni_list_first(&l->aios)) {
 		l->accept_rv = rv;
 		//CancelIoEx((HANDLE) l->s, &l->accept_io.olpd); //TODOXP
-		CancelIo((HANDLE) l->s, &l->accept_io.olpd);
+		CancelIo((HANDLE) l->s);
 	} else {
 		nni_aio *srch;
 		NNI_LIST_FOREACH (&l->aios, srch) {

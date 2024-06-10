@@ -119,7 +119,7 @@ ipc_recv_cancel(nni_aio *aio, void *arg, int rv)
 	if (aio == nni_list_first(&c->recv_aios)) {
 		c->recv_rv = rv;
 		//CancelIoEx(c->f, &c->recv_io.olpd); //TODOXP
-        CancelIo(c->f, &c->recv_io.olpd);
+        CancelIo(c->f);
 	} else {
 		nni_aio *srch;
 		NNI_LIST_FOREACH (&c->recv_aios, srch) {
@@ -236,7 +236,7 @@ ipc_send_cancel(nni_aio *aio, void *arg, int rv)
 	if (aio == nni_list_first(&c->send_aios)) {
 		c->send_rv = rv;
 		//CancelIoEx(c->f, &c->send_io.olpd); //TODOXP
-        CancelIo(c->f, &c->send_io.olpd);
+        CancelIo(c->f);
 	} else {
 		nni_aio *srch;
 		NNI_LIST_FOREACH (&c->recv_aios, srch) {
